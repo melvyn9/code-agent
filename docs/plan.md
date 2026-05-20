@@ -159,7 +159,7 @@ Goal: Detect new repositories and auto-generate documentation on first push.
   - Find the main entry point(s)
   - Identify key modules and their responsibilities
   - Note any existing configuration files (`.env.example`, `Makefile`, `docker-compose.yml`, etc.)
-- Output: a structured JSON object summarising the findings, to be passed to the next steps
+- Output: a structured summary to be passed to the next steps
 
 ### 3.3 Generate CONTRIBUTING.md
 
@@ -247,6 +247,38 @@ The README is a core part of the portfolio piece. Include:
 - How to install it in any repo (step-by-step)
 - What you learned — specifically the agent engineering decisions you made (tool scoping, prompt structure, handling failures)
 
+### 4.6 Parallel doc generation with asyncio.gather()
+
+- Replace the sequential doc generator calls in `run_onboarding()` with parallel execution:
+  ```python
+  contributing, architecture, setup = await asyncio.gather(
+      gen_contributing(codebase_summary),
+      gen_architecture(codebase_summary),
+      gen_setup_guide(codebase_summary)
+  )
+  ```
+- All three doc generators take the same input and don't depend on each other, so they can run simultaneously
+- Expected result: roughly 3x faster onboarding pipeline
+
+### 4.7 Model pinning by task
+
+- Use cheaper, faster models for simpler tasks and reserve Sonnet for complex analysis:
+  ```python
+  # Haiku for summary — simple plain-English writing task
+  ClaudeAgentOptions(model="claude-haiku-4-5", ...)
+
+  # Sonnet for security and quality — requires deep reasoning
+  ClaudeAgentOptions(model="claude-sonnet-4-6", ...)
+  ```
+- Expected result: lower cost per PR review with no meaningful quality drop on the summary
+
+### 4.8 Codebase exploration caching
+
+- Store a hash of the repo's file structure after each successful onboarding run
+- On subsequent push events, compare the current structure hash to the stored one
+- Only re-run `explore_codebase.py` if the structure has changed significantly
+- Expected result: avoid paying for a full exploration on every push to main
+
 ---
 
 ## File structure (target end state)
@@ -285,6 +317,9 @@ These are the things interviewers will ask about — have answers ready.
 - **Why not one giant prompt?** A single prompt doing security + quality + summary produces unfocused output. Three focused agents each do one job well.
 - **How you handle failures** — if the agent errors, you post a comment saying so rather than silently failing. Visible failures are better than invisible ones in CI systems.
 - **Session logging** — being able to inspect what the agent actually did is critical for debugging and for demonstrating the system to others.
+- **Parallel execution** — doc generators run concurrently with asyncio.gather() since they share the same input and have no dependencies on each other.
+- **Model selection by task** — using Haiku for simple writing tasks and Sonnet for deep code analysis balances cost and quality.
+- **Caching exploration results** — avoiding redundant API calls by hashing the repo structure and only re-exploring when something meaningful changes.
 
 ---
 

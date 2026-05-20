@@ -28,3 +28,13 @@ def post_pr_comment(pr_number, body):
     repo = get_repo()
     pr = repo.get_pull(int(pr_number))
     pr.create_issue_comment(body)
+
+def commit_file(path, content, message):
+    repo = get_repo()
+    try:
+        existing = repo.get_contents(path)
+        repo.update_file(path, message, content, existing.sha)
+        print(f"Updated {path} in repo.")
+    except Exception:
+        repo.create_file(path, message, content)
+        print(f"Created {path} in repo.")

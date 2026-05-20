@@ -3,10 +3,14 @@ name: CodeGuard
 on:
   pull_request:
     types: [opened, synchronize, reopened]
+  push:
+    branches: [main]
+  issue_comment:
+    types: [created]
 
 permissions:
   pull-requests: write
-  contents: read
+  contents: write
 
 jobs:
   review:
@@ -28,5 +32,6 @@ jobs:
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           PR_NUMBER: ${{ github.event.pull_request.number }}
-          REPO_NAME: ${{ github.repository }}
+          REPO_NAME: ${{ github.repository }} 
+          EVENT_NAME: ${{ github.event_name }}
         run: python src/main.py

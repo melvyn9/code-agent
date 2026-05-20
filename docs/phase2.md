@@ -242,3 +242,4 @@ Built the full PR review pipeline across five new modules. `gather_context.py` f
 - Phase 3.4: Write `gen_architecture.py` — generates ARCHITECTURE.md
 - Phase 3.5: Write `gen_setup_guide.py` — generates SETUP.md
 - Phase 3.6: Add `/onboard` manual re-trigger via issue comment
+ 
