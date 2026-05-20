@@ -18,11 +18,14 @@ load_dotenv()
 async def run_onboarding():
     print("Starting onboarding pipeline")
     codebase_summary = await explore_codebase()
-    contributing = await gen_contributing(codebase_summary)
+
+    contributing, architecture, setup = await asyncio.gather(
+        gen_contributing(codebase_summary),
+        gen_architecture(codebase_summary),
+        gen_setup_guide(codebase_summary)
+    )
     commit_file("CONTRIBUTING.md", contributing, "docs: add CONTRIBUTING.md using CodeGuard onboarding")
-    architecture = await gen_architecture(codebase_summary)
     commit_file("ARCHITECTURE.md", architecture, "docs: add ARCHITECTURE.md using CodeGuard onboarding")
-    setup = await gen_setup_guide(codebase_summary)
     commit_file("SETUP.md", architecture, "docs: add SETUP.md using CodeGuard onboarding")
     print("Onboarding pipeline complete.")
 
