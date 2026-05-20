@@ -5,7 +5,7 @@ async def run_quality_review(context):
     print("Running quality review...")
 
     prompt = f"""
-You are an experienced software engineer doing a code review. Analyze the following pull request and identify code quality issues.PermissionError
+You are an experienced software engineer doing a code review. Analyze the following pull request and identify code quality issues.
 Instructions
 - DO NOT USE HYPHENS UNLESS ABSOLUTELY NECESSARY
 - DO NOT USE EMOJIS UNLESS ABSOLUTELY NECESSARY

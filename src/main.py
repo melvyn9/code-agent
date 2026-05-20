@@ -23,10 +23,6 @@ async def main():
     # Run summary review
     summary_results = await run_summary(context)
 
-    print("\n-- SUMMARY RESULTS ---")
-    print("\n-- SECURITY RESULTS ---")
-    print("\n-- QUALITY RESULTS ---")
-
     # Post comment to GitHub
     post_review(pr_number, summary_results, security_results, quality_results)
 asyncio.run(main())

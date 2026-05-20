@@ -6,7 +6,7 @@ def gather_pr_context(pr_number):
     diff = get_pr_diff(pr_number)
     changed_files = get_changed_files(pr_number)
     context = f"""
-PR Numer: {pr_number}
+PR Number: {pr_number}
 Repository: {os.getenv('REPO_NAME')}
 
 Changed files:
