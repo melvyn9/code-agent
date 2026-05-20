@@ -3,24 +3,30 @@ import os
 from dotenv import load_dotenv
 from claude_agent_sdk import query, ClaudeAgentOptions
 from github_client import get_changed_files, post_pr_comment
-
+from gather_context import gather_pr_context
+from security_scan import run_security_scan
+from quality_review import run_quality_review
+from summarize_pr import run_summary
+from post_results import post_review
 load_dotenv()
 
 async def main():
-    print("Running CodeGuard agent smoke test...")
-    async for message in query(
-        prompt="List the files in the current directory using the Bash tool.",
-        options=ClaudeAgentOptions(
-            allowed_tools=["Bash", "Glob"],
-            model="claude-sonnet-4-6"
-        )
-    ):
-        if hasattr(message, "result"):
-            print("Agent output:", message.result)
+    pr_number = os.getenv("PR_NUMBER", "1")
 
+    # Gather context
+    context = gather_pr_context(pr_number)
+
+    # Run security scan
+    security_results = await run_security_scan(context)
+    # Run quality review
+    quality_results = await run_quality_review(context)
+    # Run summary review
+    summary_results = await run_summary(context)
+
+    print("\n-- SUMMARY RESULTS ---")
+    print("\n-- SECURITY RESULTS ---")
+    print("\n-- QUALITY RESULTS ---")
+
+    # Post comment to GitHub
+    post_review(pr_number, summary_results, security_results, quality_results)
 asyncio.run(main())
-
-pr_number = os.getenv("PR_NUMBER", "1")  # replace 1 with your actual test PR number
-
-print("Changed files:", get_changed_files(pr_number))
-post_pr_comment(pr_number, "CodeGuard is alive — Phase 1 complete!")
