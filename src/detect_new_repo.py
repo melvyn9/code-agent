@@ -1,6 +1,7 @@
 import os
 from github_client import get_repo
 
+# Returns True if CONTRIBUTING.md is missing from the repo, signalling that onboarding should run.
 def is_new_repo():
     print("Checking if repo needs onboarding...")
     repo = get_repo()

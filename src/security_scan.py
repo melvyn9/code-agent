@@ -1,6 +1,7 @@
 import asyncio
 from claude_agent_sdk import query, ClaudeAgentOptions
 
+# Runs a Claude agent to find security vulnerabilities in the PR diff; only reports findings at or above severity_threshold.
 async def run_security_scan(context, severity_threshold="low"):
     print("Running security scan...")
 

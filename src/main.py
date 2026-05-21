@@ -17,6 +17,7 @@ from config import load_config
 from logger import SessionLogger
 load_dotenv()
 
+# Explores the codebase and generates CONTRIBUTING.md, ARCHITECTURE.md, and SETUP.md in parallel, then commits each to the repo.
 async def run_onboarding(config, logger):
     if not config["onboarding"]["enabled"]:
         print("Onboarding disabled in config. Skipping.")
@@ -43,6 +44,7 @@ async def run_onboarding(config, logger):
     commit_file("SETUP.md", architecture, "docs: add SETUP.md using CodeGuard onboarding")
     print("Onboarding pipeline complete.")
 
+# Entry point: reads the GitHub event type and routes to the onboarding pipeline (push/issue_comment) or the PR review pipeline.
 async def main():
     config = load_config()
     logger = SessionLogger()

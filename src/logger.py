@@ -4,6 +4,7 @@ from datetime import datetime
 from zoneinfo import ZoneInfo
 
 class SessionLogger:
+    # Initializes the session dict with repo/PR metadata and a Pacific-time timestamp.
     def __init__(self):
         now = datetime.now(ZoneInfo("America/Los_Angeles"))
         self.session = {
@@ -14,6 +15,7 @@ class SessionLogger:
             "runs": []
         }
 
+    # Appends an agent run record (name, status, prompt/result lengths, preview) to the session.
     def log(self, agent_name, prompt, result, status="success"):
         now = datetime.now(ZoneInfo("America/Los_Angeles"))
         self.session["runs"].append({
@@ -25,6 +27,7 @@ class SessionLogger:
             "timestamp": now.isoformat()
         })
 
+    # Writes the full session dict to a JSON file (used as a GitHub Actions artifact).
     def save(self, path="codeguard_session.json"):
         with open(path, "w") as f:
             json.dump(self.session, f, indent=2)

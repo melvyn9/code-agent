@@ -1,6 +1,7 @@
 import asyncio
 from claude_agent_sdk import query, ClaudeAgentOptions
 
+# Runs a Claude agent to generate a complete CONTRIBUTING.md from the codebase summary.
 async def gen_contributing(codebase_summary):
     print("Generating CONTRIBUTING.md")
 

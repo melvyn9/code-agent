@@ -1,6 +1,7 @@
 import os
 from github_client import get_pr_diff, get_changed_files
 
+# Fetches the PR diff and changed file list, then packages them into a single context string for the agents.
 def gather_pr_context(pr_number):
     print(f"Gathering context for PR #{pr_number}...")
 

@@ -2,6 +2,7 @@ import asyncio
 from claude_agent_sdk import query, ClaudeAgentOptions
 from cache import has_structure_changed, get_cached_summary, save_summary_to_cache
 
+# Runs a Claude agent to map the repo structure and produce a structured summary; returns a cached result if the file structure hasn't changed.
 async def explore_codebase():
     if not has_structure_changed():
         cached = get_cached_summary()

@@ -1,5 +1,6 @@
 from claude_agent_sdk import query, ClaudeAgentOptions
 
+# Runs a Claude agent to generate a complete ARCHITECTURE.md covering pipelines, modules, and data flow.
 async def gen_architecture(codebase_summary):
     print("Generating ARCHITECTURE.md")
 

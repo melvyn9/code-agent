@@ -1,5 +1,6 @@
 from claude_agent_sdk import query, ClaudeAgentOptions
 
+# Runs a Claude Haiku agent to write a plain-English summary of what the PR does and which areas it affects.
 async def run_summary(context):
     print("Running PR Summary...")
 

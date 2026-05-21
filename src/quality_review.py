@@ -1,6 +1,7 @@
 import asyncio
 from claude_agent_sdk import query, ClaudeAgentOptions
 
+# Runs a Claude agent to flag code quality issues (complexity, naming, error handling, duplication, tests, config).
 async def run_quality_review(context):
     print("Running quality review...")
 

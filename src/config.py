@@ -8,6 +8,7 @@ DEFAULT_CONFIG = {
     "onboarding": {"enabled": True},
 }
 
+# Loads .codeguard.yml and deep-merges each section with DEFAULT_CONFIG; falls back to defaults if the file is missing.
 def load_config():
     config_path = ".codeguard.yml"
     if not os.path.exists(config_path):
