@@ -1,7 +1,14 @@
 import asyncio
 from claude_agent_sdk import query, ClaudeAgentOptions
+from cache import has_structure_changed, get_cached_summary, save_summary_to_cache
 
 async def explore_codebase():
+    if not has_structure_changed():
+        cached = get_cached_summary()
+        if cached:
+            print("Using cached codebase summary.")
+            return cached
+    
     print("Exploring codebase...")
 
     prompt = """
@@ -45,16 +52,24 @@ DEPENDENCIES:
 CONFIG FILES:
 <any configuration files found>
 """
-    result = ""
-    async for message in query(
-        prompt=prompt,
-        options=ClaudeAgentOptions(
-            allowed_tools=["Read", "Glob", "Bash"],
-            model="claude-sonnet-4-6"
-        ),
-    ):
-        if hasattr(message, "result"):
-            result = message.result
+    try:
+        result = ""
+        async for message in query(
+            prompt=prompt,
+            options=ClaudeAgentOptions(
+                allowed_tools=["Read", "Glob", "Bash"],
+                model="claude-sonnet-4-6"
+            ),
+        ):
+            if hasattr(message, "result"):
+                result = message.result
+            elif hasattr(message, "output"):
+                result = message.output
+        
+        save_summary_to_cache(result)
+        print("Codebase exploration completed.")
+        return result
     
-    print("Codebase exploration completed.")
-    return result
+    except Exception as e:
+        print(f"Codebase exploration failed: {e}")
+        return f"Exploration failed: {str(e)}"

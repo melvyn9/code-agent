@@ -20,16 +20,21 @@ Respond in this exact format:
 SUMMARY:
 < 2-5 sentences here>
 """
-    result = ""
-    async for message in query(
-        prompt=prompt,
-        options=ClaudeAgentOptions(
-            allowed_tools=["Read"],
-            model="claude-sonnet-4-6"
-        ),
-    ):
-        if hasattr(message, "result"):
-            result = message.result
-
-    print("Summary Complete.")
-    return result
+    try:
+        result = ""
+        async for message in query(
+            prompt=prompt,
+            options=ClaudeAgentOptions(
+                allowed_tools=["Read"],
+                model="claude-haiku-4-5"
+            ),
+        ):
+            if hasattr(message, "result"):
+                result = message.result
+            elif hasattr(message, "output"):
+                result = message.output
+        print("Summary Complete.")
+        return result
+    except Exception as e:
+        print(f"Summary failed: {e}")
+        return f"SUMMARY:\n- Summary failed: {str(e)}"

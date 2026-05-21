@@ -1,0 +1,12 @@
+security:
+  enabled: true
+  severity_threshold: high # low | medium | high
+
+quality:
+  enabled: false
+
+summary:
+  enabled: true
+
+onboarding:
+  enabled: false

@@ -29,16 +29,22 @@ If no issues are found, respond with:
 QUALITY NOTES:
 - No quality issues found
 """
-    
-    result = ""
-    async for message in query(
-        prompt=prompt,
-        options=ClaudeAgentOptions(
-            allowed_tools=["Read"],
-            model="claude-sonnet-4-6"
-        ),
-    ):
-        if hasattr(message, "result"):
-            result = message.result
-    print("Quality review complete.")
-    return result
+    try:
+        result = ""
+        async for message in query(
+            prompt=prompt,
+            options=ClaudeAgentOptions(
+                allowed_tools=["Read"],
+                model="claude-sonnet-4-6"
+            ),
+        ):
+            if hasattr(message, "result"):
+                result = message.result
+            elif hasattr(message, "output"):
+                result = message.output
+        print("Quality review complete.")
+        return result
+
+    except Exception as e:
+        print(f"Quality review failed: {e}")
+        return f"QUALITY NOTES:\n- Quality review failed: {str(e)}"

@@ -1,5 +1,6 @@
 import os
 from github import Github
+import time
 
 def get_github_client():
     token = os.getenv("GITHUB_TOKEN")
@@ -24,10 +25,22 @@ def get_changed_files(pr_number):
     pr = repo.get_pull(int(pr_number))
     return [file.filename for file in pr.get_files()]
 
-def post_pr_comment(pr_number, body):
+def post_pr_comment(pr_number, body, retries=2):
     repo = get_repo()
     pr = repo.get_pull(int(pr_number))
-    pr.create_issue_comment(body)
+
+    for attempt in range(retries + 1):
+        try:
+            pr.create_issue_comment(body)
+            print("Comment posted successfully.")
+            return
+        except Exception as e:
+            if attempt < retries:
+                print(f"Failed to post comment (attempt {attempt + 1}). Retrying in 3 seconds...")
+                time.sleep(3)
+            else:
+                print(f"Failed to post comment after {retries + 1} attempts: {e}")
+                raise
 
 def commit_file(path, content, message):
     repo = get_repo()

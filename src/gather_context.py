@@ -3,8 +3,19 @@ from github_client import get_pr_diff, get_changed_files
 
 def gather_pr_context(pr_number):
     print(f"Gathering context for PR #{pr_number}...")
-    diff = get_pr_diff(pr_number)
-    changed_files = get_changed_files(pr_number)
+
+    try:
+        diff = get_pr_diff(pr_number)
+    except Exception as e:
+        print(f"Failed to fetch PR diff: {e}")
+        diff = "Diff unavailable due to an error."
+
+    try:
+        changed_files = get_changed_files(pr_number)
+    except Exception as e:
+        print(f"Failed to fetch changed files: {e}")
+        changed_files = []
+
     context = f"""
 PR Number: {pr_number}
 Repository: {os.getenv('REPO_NAME')}
