@@ -1,14 +1,12 @@
 # ARCHITECTURE.md
 
-## CodeGuard System Architecture
+# CodeGuard Architecture
 
----
+## High-Level System Overview
 
-## High Level System Overview
+CodeGuard is a GitHub-integrated AI agent built on the Anthropic Claude Agent SDK. It runs entirely inside GitHub Actions and provides two automated pipelines: a pull request review pipeline that scans incoming code changes for security vulnerabilities and code quality issues, and an onboarding pipeline that generates structured documentation for new repositories.
 
-CodeGuard is a GitHub integrated AI agent built on the Anthropic Claude Agent SDK. It operates as a stateless Python process invoked by GitHub Actions and performs two distinct automated tasks: reviewing pull requests for security vulnerabilities and code quality issues, and generating onboarding documentation for new repositories.
-
-The system has no persistent server, no database, and no web interface. Every run is triggered by a GitHub event, executes to completion inside a GitHub Actions runner, and produces its outputs as pull request comments, committed markdown files, and an uploaded session artifact. All intelligence is delegated to Claude models via the Anthropic Claude Agent SDK.
+All agent reasoning is delegated to Claude models through the SDK. CodeGuard itself acts as a thin orchestration layer that routes events, assembles context, invokes agents, and delivers results back to GitHub. There is no persistent server, no database, and no long-running process. Each GitHub Actions job starts fresh, completes its work, and exits.
 
 ---
 
@@ -16,29 +14,24 @@ The system has no persistent server, no database, and no web interface. Every ru
 
 ### PR Review Pipeline
 
-The PR review pipeline activates when a pull request is opened or updated, or when an issue comment contains the `/onboard` command directed at a pull request context.
+The PR review pipeline activates when a pull request is opened, synchronized, or reopened. It executes the following stages in sequence:
 
-The pipeline proceeds through the following stages in order:
-
-1. `gather_context.py` assembles the pull request number, repository name, list of changed files, and the unified diff into a single context string.
-2. `security_scan.py` sends that context to a Claude agent with a security focused prompt and returns a formatted FINDINGS block, filtered to the configured severity threshold.
-3. `quality_review.py` sends the same context to a separate Claude agent with a code quality prompt and returns a formatted QUALITY NOTES block organised by issue type.
-4. `summarize_pr.py` sends the context to a Claude Haiku model and returns a two to five sentence plain English summary of the pull request's intent and impact.
-5. `post_results.py` assembles all three outputs into a single markdown comment body and publishes it to the pull request via `github_client.py`.
-
-Each of the three AI calls is independent. The security scan, quality review, and summary each invoke their own Claude agent with their own prompt and return their own structured block. They are assembled only at the final posting step.
+1. **Context assembly** — the diff and changed file list for the PR are fetched from the GitHub API and formatted into a single context string.
+2. **Security scan** — a Claude agent reads the context and identifies security vulnerabilities, returning a structured FINDINGS block.
+3. **Quality review** — a second Claude agent reads the context and identifies code quality issues, returning a structured QUALITY NOTES block.
+4. **Summary** — a third Claude agent reads the context and produces a plain-English explanation of what the PR does, which parts of the codebase it affects, and any notable risks.
+5. **Post results** — the three output blocks are assembled into a single markdown comment and posted directly onto the PR.
 
 ### Onboarding Pipeline
 
-The onboarding pipeline activates on push events to the main branch when `detect_new_repo.py` determines that `CONTRIBUTING.md` does not yet exist in the repository.
+The onboarding pipeline activates on two triggers: a push to the main branch (when no CONTRIBUTING.md is detected in the repository), and a manual `/onboard` command posted as an issue comment.
 
-The pipeline proceeds through the following stages in order:
+It executes the following stages in sequence:
 
-1. `explore_codebase.py` runs a Claude agent equipped with the Read, Glob, and Bash tools to autonomously traverse the repository and produce a structured codebase summary string. Before running, it consults `cache.py` to check whether the repository structure has changed since the last run. If the cached hash matches the current file tree hash, the stored summary is returned directly and no AI exploration is performed.
-2. `gen_contributing.py`, `gen_architecture.py`, and `gen_setup_guide.py` each receive the codebase summary string and independently prompt a Claude agent to produce the corresponding markdown document.
-3. `github_client.py` creates or updates each of the three generated files in the repository using the GitHub API.
-
-The three document generation calls are logically independent of one another. They share only the codebase summary string as input and each writes to a separate file path in the repository.
+1. **New repo detection** — the system checks whether CONTRIBUTING.md already exists. If it does, the pipeline exits early.
+2. **Codebase exploration** — a Claude agent with Read, Glob, and Bash tools maps the repository structure and produces a structured codebase summary.
+3. **Documentation generation** — three Claude agents run in sequence, each consuming the codebase summary and writing one documentation file: CONTRIBUTING.md, ARCHITECTURE.md, and SETUP.md.
+4. **Commit files** — each generated file is committed to the repository root via the GitHub Contents API.
 
 ---
 
@@ -46,63 +39,58 @@ The three document generation calls are logically independent of one another. Th
 
 ### src/main.py
 
-The sole entry point and central orchestrator. It loads configuration from `config.py`, reads environment variables to identify the triggering event type (pull request, push to main, or issue comment), and dispatches to either the PR review pipeline or the onboarding pipeline. After either pipeline completes, it calls `logger.py` to write the session record.
-
-### src/config.py
-
-Responsible for all configuration loading. It reads `.codeguard.yml` from the repository root using PyYAML, merges the parsed values with hardcoded defaults for any missing keys, and returns a unified dictionary. The dictionary is consumed by `main.py` to decide which pipeline features are enabled and what the active severity threshold is.
+The sole entry point and routing layer. It reads the `EVENT_NAME` environment variable and dispatches execution to the appropriate pipeline. For `pull_request` events it runs the five-stage review pipeline. For `push` events it checks for new repo conditions and runs the onboarding pipeline if needed. For `issue_comment` events it checks whether the comment body contains `/onboard` and triggers the onboarding pipeline manually. No business logic lives here; all work is delegated to the modules below.
 
 ### src/github_client.py
 
-A thin wrapper around the PyGitHub library. It exposes four functions used across the system: retrieving a pull request diff, listing the files changed in a pull request, posting a comment to a pull request, and creating or updating a file in the repository. All authentication is handled through the `GITHUB_TOKEN` environment variable. No other module interacts with the GitHub API directly.
+The GitHub API utility layer. It wraps PyGithub and exposes four functions used throughout the system:
+
+- `get_pr_diff()` fetches the raw unified diff for a pull request.
+- `get_changed_files()` returns a list of file paths modified by the PR.
+- `post_pr_comment()` writes a markdown string as a comment on a PR.
+- `commit_file()` creates or updates a file in the repository using the GitHub Contents API.
+
+All functions read `GITHUB_TOKEN` and `REPO_NAME` from the environment.
 
 ### src/gather_context.py
 
-Assembles the PR context string passed as input to the three AI review agents. It calls `github_client.py` to retrieve the pull request diff and list of changed files, then combines those with the pull request number and repository name into a single formatted string.
+Assembles the context string that is passed as input to all three PR review agents. It calls `get_pr_diff()` and `get_changed_files()` and formats them alongside the repository name and PR number into a single prompt-ready string.
 
 ### src/security_scan.py
 
-Sends the assembled PR context to a Claude agent with a structured security focused system prompt. Returns a formatted FINDINGS block. Results are filtered to include only findings at or above the severity threshold specified in the configuration.
+Runs a Claude agent with the Read tool and a security-focused system prompt. The agent looks for hardcoded secrets, injection vulnerabilities, unsafe use of `eval` or `exec`, missing input validation, insecure dependencies, and sensitive data exposure. It returns a structured FINDINGS block as a string.
 
 ### src/quality_review.py
 
-Sends the assembled PR context to a Claude agent with a code quality system prompt. Returns a formatted QUALITY NOTES block with issues organised by category. Operates entirely independently of `security_scan.py`.
+Runs a Claude agent with the Read tool and a code quality system prompt. The agent checks for overly complex functions, naming inconsistencies, weak error handling, duplicated logic, missing tests, and hardcoded values. It returns a structured QUALITY NOTES block as a string.
 
 ### src/summarize_pr.py
 
-Sends the assembled PR context to the Claude Haiku model and returns a concise plain English summary of the pull request's purpose and likely impact. Haiku is used here rather than a larger model because summarisation requires less reasoning depth and benefits from lower latency.
+Runs a Claude agent with the Read tool to produce a concise plain-English summary of the PR. The summary describes what the PR does, which parts of the codebase it touches, and any notable risks or trade-offs. It returns a structured SUMMARY block as a string.
 
 ### src/post_results.py
 
-Accepts the summary string, the FINDINGS block, and the QUALITY NOTES block, and assembles them into a single markdown comment. Calls `github_client.post_pr_comment` to publish the comment on the pull request. This module contains no AI calls; it is purely compositional.
-
-### src/explore_codebase.py
-
-Runs a Claude agent with access to the Read, Glob, and Bash tools. The agent autonomously explores the repository structure and produces a structured codebase summary string. Before invoking the agent, it calls `cache.py` to check whether the repository file tree has changed. If the hash is unchanged, the cached summary is returned immediately and the agent is not invoked.
-
-### src/gen_contributing.py
-
-Accepts the codebase summary string and prompts a Claude agent to produce a `CONTRIBUTING.md` document. Returns the raw markdown content.
-
-### src/gen_architecture.py
-
-Accepts the codebase summary string and prompts a Claude agent to produce an `ARCHITECTURE.md` document. Returns the raw markdown content.
-
-### src/gen_setup_guide.py
-
-Accepts the codebase summary string and prompts a Claude agent to produce a `SETUP.md` document. Returns the raw markdown content.
+Assembles the outputs from the three review agents into a single branded markdown comment and posts it to the PR via `post_pr_comment()`. The comment is structured with labeled sections for summary, security findings, and quality notes.
 
 ### src/detect_new_repo.py
 
-Checks whether `CONTRIBUTING.md` already exists in the repository by querying the GitHub API via `github_client.py`. If the file is absent, the function returns true and `main.py` proceeds with the onboarding pipeline. This module has no AI calls.
+Determines whether onboarding should run. It attempts to fetch CONTRIBUTING.md from the repository root via the GitHub API. If the file is absent it returns `True`. If the file already exists it returns `False`, preventing duplicate onboarding runs.
 
-### src/cache.py
+### src/explore_codebase.py
 
-Computes an MD5 hash of the full repository file tree by listing all files via the GitHub API. Compares the computed hash against a stored hash in `.codeguard_cache.json`. If the hashes differ or no cache exists, returns a miss and the caller proceeds to run `explore_codebase.py`. After a successful exploration, persists both the new hash and the generated codebase summary string to `.codeguard_cache.json`.
+Runs a Claude agent equipped with Read, Glob, and Bash tools to map the repository structure. The agent explores directories, reads source files, and produces a structured codebase summary. This summary is the shared input passed to all three documentation generator modules.
 
-### src/logger.py
+### src/gen_contributing.py
 
-Implements the `SessionLogger` class. Every agent module registers its invocation metadata and a truncated output preview with the logger during a run. At the end of the run, `main.py` calls the logger to serialise the complete record as `codeguard_session.json`. Timestamps are recorded in the America/Los_Angeles timezone using the `tzdata` package.
+Runs a Claude agent that writes a complete CONTRIBUTING.md file from the codebase summary. The output covers project overview, prerequisites, local setup, environment variables, branching conventions, and PR submission instructions.
+
+### src/gen_architecture.py
+
+Runs a Claude agent that writes a complete ARCHITECTURE.md file from the codebase summary. The output covers system overview, pipeline descriptions, module breakdown, data flow, and external dependencies.
+
+### src/gen_setup_guide.py
+
+Runs a Claude agent that writes a complete SETUP.md file from the codebase summary. The output covers prerequisites, step-by-step local setup, `.env` population, instructions for running both pipelines, and common setup mistakes.
 
 ---
 
@@ -111,133 +99,129 @@ Implements the `SessionLogger` class. Every agent module registers its invocatio
 ### PR Review Data Flow
 
 ```
-GitHub Event (pull_request / issue_comment)
-        |
-        v
-main.py reads EVENT_NAME, PR_NUMBER from environment
-        |
-        v
-config.py loads .codeguard.yml and returns feature flags + severity threshold
-        |
-        v
-gather_context.py calls github_client.py to fetch diff and changed files
-        |
-        v
-    [assembled PR context string]
-        |
-        +----> security_scan.py ----> Claude agent (security prompt) ----> FINDINGS block
-        |
-        +----> quality_review.py ---> Claude agent (quality prompt)  ----> QUALITY NOTES block
-        |
-        +----> summarize_pr.py -----> Claude Haiku model             ----> summary string
-        |
-        v
-post_results.py assembles all three outputs into a markdown comment
-        |
-        v
-github_client.post_pr_comment publishes comment on the pull request
-        |
-        v
-logger.py writes codeguard_session.json
-        |
-        v
-GitHub Actions uploads codeguard_session.json as an artifact
+GitHub webhook (pull_request event)
+        │
+        ▼
+GitHub Actions triggers codeguard.yml
+        │
+        ▼
+src/main.py reads EVENT_NAME → dispatches to PR review pipeline
+        │
+        ▼
+src/gather_context.py
+  → github_client.get_pr_diff()       ← GitHub API
+  → github_client.get_changed_files() ← GitHub API
+  → returns context string
+        │
+        ├──────────────────────────────────────────────────┐
+        │                                                  │
+        ▼                                                  ▼
+src/security_scan.py              src/quality_review.py
+  → Claude agent (Read tool)        → Claude agent (Read tool)
+  → returns FINDINGS block          → returns QUALITY NOTES block
+        │                                                  │
+        └──────────────────┬───────────────────────────────┘
+                           │
+                           ▼
+                  src/summarize_pr.py
+                    → Claude agent (Read tool)
+                    → returns SUMMARY block
+                           │
+                           ▼
+                  src/post_results.py
+                    → assembles markdown comment
+                    → github_client.post_pr_comment() ← GitHub API
+                           │
+                           ▼
+                  Comment posted on PR
 ```
 
 ### Onboarding Data Flow
 
 ```
-GitHub Event (push to main)
-        |
-        v
-main.py reads EVENT_NAME from environment
-        |
-        v
-detect_new_repo.py queries GitHub API for CONTRIBUTING.md existence
-        |
-        [if absent]
-        v
-cache.py computes MD5 hash of repository file tree
-        |
-        +-- [hash matches cached hash] --> return cached codebase summary
-        |
-        +-- [hash differs or no cache] --> explore_codebase.py runs Claude agent
-                                           with Read, Glob, Bash tools
-                                           --> structured codebase summary string
-                                           --> cache.py persists new hash + summary
-        |
-        v
-    [codebase summary string]
-        |
-        +----> gen_contributing.py --> Claude agent --> CONTRIBUTING.md content
-        |
-        +----> gen_architecture.py --> Claude agent --> ARCHITECTURE.md content
-        |
-        +----> gen_setup_guide.py  --> Claude agent --> SETUP.md content
-        |
-        v
-github_client.create_or_update_file commits each document to the repository
-        |
-        v
-logger.py writes codeguard_session.json
-        |
-        v
-GitHub Actions uploads codeguard_session.json as an artifact
+GitHub webhook (push to main or issue_comment /onboard)
+        │
+        ▼
+GitHub Actions triggers codeguard.yml
+        │
+        ▼
+src/main.py reads EVENT_NAME → dispatches to onboarding pipeline
+        │
+        ▼
+src/detect_new_repo.py
+  → github_client fetches CONTRIBUTING.md ← GitHub API
+  → returns True (absent) or False (exists)
+        │
+        ▼ (only if True)
+src/explore_codebase.py
+  → Claude agent (Read + Glob + Bash tools)
+  → returns codebase summary string
+        │
+        ├─────────────────────────────────────────────────┐
+        │                         │                       │
+        ▼                         ▼                       ▼
+src/gen_contributing.py  src/gen_architecture.py  src/gen_setup_guide.py
+  → Claude agent           → Claude agent           → Claude agent
+  → CONTRIBUTING.md        → ARCHITECTURE.md        → SETUP.md
+        │                         │                       │
+        └─────────────────────────┴───────────────────────┘
+                                  │
+                                  ▼
+                        github_client.commit_file() × 3 ← GitHub API
+                                  │
+                                  ▼
+                        Files committed to repository root
 ```
 
 ---
 
 ## External Dependencies
 
-### Anthropic Claude Agent SDK (`claude-agent-sdk`)
+### claude-agent-sdk
 
-The core AI execution framework. Every module that performs an AI task imports the `query` function and the `ClaudeAgentOptions` class from this SDK. The SDK manages the conversation loop, tool execution, and model invocation. CodeGuard delegates all intelligence to Claude through this interface and has no custom model logic of its own.
+The Anthropic Claude Agent SDK for Python. It provides the `query()` coroutine and `ClaudeAgentOptions` class used to run every AI agent in the system. Each agent call specifies a model, a set of permitted tools (Read, Glob, Bash), and a prompt. The SDK handles all communication with the Anthropic API, manages tool execution loops, and returns the final text response. This is the core intelligence layer of CodeGuard; without it the system has no ability to reason about code.
 
-### PyGitHub (`pygithub`)
+### pygithub
 
-The Python client for the GitHub REST API. Used exclusively within `github_client.py` to abstract all repository interactions. Chosen because it provides a Pythonic, object oriented interface over the raw GitHub API and handles authentication, pagination, and request construction automatically.
+A Python wrapper around the GitHub REST API. It is used for every GitHub interaction in the system: fetching PR diffs, listing changed files, posting PR comments, and creating or updating files in the repository. PyGithub abstracts away raw HTTP and pagination concerns, providing a clean object model for repositories, pull requests, and file contents.
 
 ### python-dotenv
 
-Loads `.env` files into environment variables at process start. Used only during local development runs to replicate the environment variable context that GitHub Actions provides automatically in CI. Has no effect in production.
-
-### PyYAML (`pyyaml`)
-
-Parses the `.codeguard.yml` configuration file into a Python dictionary. Used exclusively within `config.py`. Chosen because YAML is the standard format for GitHub Actions and repository configuration files, and PyYAML is the canonical Python parser for it.
-
-### tzdata
-
-Provides timezone data required by `logger.py` to record session timestamps in the America/Los_Angeles timezone. Included as an explicit dependency because some minimal runtime environments do not ship system timezone data by default.
+A utility for loading environment variables from a `.env` file into the process environment. It is used only during local development to populate `ANTHROPIC_API_KEY`, `GITHUB_TOKEN`, `REPO_NAME`, and `PR_NUMBER` without manually exporting variables. In production (GitHub Actions) these variables are injected directly by the workflow and python-dotenv has no effect.
 
 ---
 
 ## GitHub Actions Integration
 
-The workflow is defined in `.github/workflows/codeguard.yml` and is the only mechanism by which the system is invoked in production.
+The file `.github/workflows/codeguard.yml` is the single workflow definition for the project. It contains all trigger definitions and job steps.
 
-### Trigger Conditions
+### Triggers
 
-The workflow fires on three event types:
+The workflow listens for three event types:
 
-- `pull_request` events with actions `opened`, `synchronize`, and `reopened`, which trigger the PR review pipeline.
-- `push` events targeting the main branch, which trigger the onboarding pipeline check.
-- `issue_comment` events with action `created`, which trigger the PR review pipeline when the comment body contains the `/onboard` command.
+- `pull_request` with activity types `opened`, `synchronize`, and `reopened` — activates the PR review pipeline.
+- `push` to the `main` branch — activates the onboarding pipeline when CONTRIBUTING.md is absent.
+- `issue_comment` with activity type `created` — activates the onboarding pipeline when the comment body contains `/onboard`.
 
-### Environment Variable Injection
+### Job Steps
 
-The workflow sets all environment variables that `main.py` and other modules read at runtime. This includes:
+Each triggered job runs on an Ubuntu runner and executes the following steps in order:
 
-- `ANTHROPIC_API_KEY` sourced from a GitHub Actions secret, used by the Claude Agent SDK for model authentication.
-- `GITHUB_TOKEN` sourced from the built-in `secrets.GITHUB_TOKEN`, used by `github_client.py` for all GitHub API calls.
-- `REPO_NAME` set from `github.repository`, identifying the target repository.
-- `EVENT_NAME` set from `github.event_name`, used by `main.py` to select the correct pipeline.
-- `PR_NUMBER` set from `github.event.pull_request.number` or the issue comment context, used by `gather_context.py`.
-- `COMMENT_BODY` set from `github.event.comment.body` when the trigger is an issue comment, used by `main.py` to detect the `/onboard` command.
+1. Check out the repository using `actions/checkout`.
+2. Set up Python 3.11 using `actions/setup-python`.
+3. Install dependencies via `pip install -r requirements.txt`.
+4. Run `python src/main.py`.
 
-### Execution Steps
+### Environment Variables
 
-The workflow checks out the repository, sets up Python 3.11, installs dependencies from `requirements.txt` into the virtual environment, and then executes `python src/main.py`. After the process exits, the workflow runs an artifact upload step that attaches `codeguard_session.json` to the workflow run, making the full session log available for inspection in the GitHub Actions UI.
+The workflow injects the following variables into the job environment from GitHub secrets and context expressions:
 
-### Secrets and Permissions
+| Variable | Source | Purpose |
+|---|---|---|
+| `ANTHROPIC_API_KEY` | GitHub secret | Authenticates Claude API calls |
+| `GITHUB_TOKEN` | GitHub secret | Authenticates GitHub API calls |
+| `REPO_NAME` | GitHub context (`github.repository`) | Identifies the target repository |
+| `PR_NUMBER` | GitHub context (`github.event.pull_request.number`) | Identifies the target PR |
+| `EVENT_NAME` | GitHub context (`github.event_name`) | Controls pipeline routing in main.py |
 
-The workflow requires two secrets: `ANTHROPIC_API_KEY` must be added manually to the repository's Actions secrets. `GITHUB_TOKEN` is provided automatically by GitHub Actions. The workflow also requires that the Actions runner has write permission to repository contents so that `github_client.py` can commit the generated onboarding documents.
+The `EVENT_NAME` variable is the primary dispatch signal. `src/main.py` reads it first and uses it to decide which pipeline to execute, making the workflow stateless and self-contained across all three trigger types.
