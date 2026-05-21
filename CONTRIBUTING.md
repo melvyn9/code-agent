@@ -1,127 +1,145 @@
 # Contributing to CodeGuard
 
-CodeGuard is a GitHub-integrated AI agent that automatically reviews pull requests for security vulnerabilities and code quality issues. It also generates onboarding documentation for new repositories and posts all findings as structured comments directly on pull requests.
+CodeGuard is a GitHub integrated AI agent that automatically reviews pull requests for security vulnerabilities and code quality issues, and generates onboarding documentation for new repositories upon their first push.
 
 ## Prerequisites
 
-You will need the following before setting up the project locally.
+Before setting up the project locally, ensure you have the following installed:
 
-**Python 3.11**
-CodeGuard is written entirely in Python 3.11. Earlier versions are not supported. Verify your version with:
+- Python 3.11
+- Git
+- A text editor or IDE of your choice
+- A GitHub account with access to the repository
+- An Anthropic API key with access to Claude models
 
-    python --version
+## Cloning and Setting Up the Project
 
-**Git**
-Standard Git installation is required to clone the repository and manage branches.
+Clone the repository to your local machine:
 
-**A GitHub personal access token**
-The token must have `repo` scope so the application can read pull request diffs and post comments.
+```
+git clone https://github.com/<your-org>/codeguard.git
+cd codeguard
+```
 
-**An Anthropic API key**
-CodeGuard uses the Claude Agent SDK to run all AI review and documentation tasks. You can obtain an API key from the Anthropic console.
+Once inside the project directory, create a virtual environment using the Python 3.11 interpreter:
 
-## Cloning and Setting Up the Project Locally
-
-Clone the repository and move into the project directory:
-
-    git clone https://github.com/your-org/codeguard.git
-    cd codeguard
-
-Create a virtual environment inside the project directory:
-
-    python -m venv venv
+```
+python3.11 -m venv venv
+```
 
 ## Activating the Virtual Environment
 
 On macOS and Linux:
 
-    source venv/bin/activate
+```
+source venv/bin/activate
+```
 
 On Windows:
 
-    venv\Scripts\activate
+```
+venv\Scripts\activate
+```
 
-Your shell prompt will update to show `(venv)` when the environment is active. All subsequent commands assume the virtual environment is active.
+Your terminal prompt should now reflect the active environment. All subsequent commands assume the virtual environment is active.
 
 ## Installing Dependencies
 
-With the virtual environment active, install the three required packages:
+With the virtual environment active, install all required dependencies from the requirements file:
 
-    pip install -r requirements.txt
+```
+pip install -r requirements.txt
+```
 
-This installs `claude-agent-sdk` (the Anthropic Claude Agent SDK), `pygithub` (the GitHub REST API wrapper), and `python-dotenv` (local environment variable loading).
+This installs the following direct dependencies:
 
-## Required Environment Variables
+- `claude-agent-sdk` for AI agent orchestration and async streaming calls to Anthropic models
+- `pygithub` for interacting with the GitHub REST API
+- `python-dotenv` for loading environment variables from a `.env` file
+- `pyyaml` for parsing the `.codeguard.yml` configuration file
+- `tzdata` for IANA timezone support on Windows
 
-CodeGuard reads all configuration from environment variables. In GitHub Actions these are injected automatically from repository secrets. For local development, create a `.env` file in the project root with the following variables.
+## Environment Variables
 
-**ANTHROPIC_API_KEY**
-Your Anthropic API key. This authenticates all calls to the Claude Agent SDK that power the security scan, quality review, summarization, codebase exploration, and documentation generation agents.
+Create a `.env` file in the repository root. This file is excluded from version control and must never be committed. Populate it with the following variables:
 
-**GITHUB_TOKEN**
-A GitHub personal access token with `repo` scope. This authenticates all GitHub API calls made through PyGithub, including reading pull request diffs, listing changed files, posting review comments, and committing generated documentation files.
+```
+ANTHROPIC_API_KEY=
+GITHUB_TOKEN=
+REPO_NAME=
+EVENT_NAME=
+PR_NUMBER=
+COMMENT_BODY=
+```
 
-**REPO_NAME**
-The full repository name in `owner/repository` format, for example `your-org/codeguard`. This tells the GitHub client which repository to operate against.
+**ANTHROPIC_API_KEY** is your Anthropic API key. It authenticates all calls to Claude models, including `claude-sonnet-4-6` for deep analysis and `claude-haiku-4-5` for summarization.
 
-**PR_NUMBER**
-The pull request number to review, for example `42`. This is used by the PR review pipeline to fetch the correct diff and post the comment on the correct pull request. Leave this unset or empty when testing the onboarding pipeline on a push event.
+**GITHUB_TOKEN** is a GitHub personal access token or Actions token. It authorizes CodeGuard to read pull request diffs, list changed files, post review comments, and commit generated documentation files to the target repository.
 
-**EVENT_NAME**
-Controls which pipeline `src/main.py` executes. Set this to `pull_request` to run the full PR review pipeline (security scan, quality review, summary, and comment). Set it to `push` to run the onboarding pipeline (codebase exploration and documentation generation). Set it to `issue_comment` to simulate the manual `/onboard` comment trigger.
+**REPO_NAME** is the full name of the target GitHub repository in `owner/repo` format. CodeGuard uses this to locate the correct repository when making GitHub API calls.
 
-A minimal `.env` file for local PR review testing looks like this:
+**EVENT_NAME** controls which pipeline CodeGuard executes on startup. Set it to `pull_request` to trigger the PR review pipeline, `push` to trigger the onboarding pipeline, or leave it as the raw value passed by the GitHub Actions runner.
 
-    ANTHROPIC_API_KEY=sk-ant-...
-    GITHUB_TOKEN=ghp_...
-    REPO_NAME=your-org/codeguard
-    PR_NUMBER=5
-    EVENT_NAME=pull_request
+**PR_NUMBER** is the number of the pull request to review. This is only required when `EVENT_NAME` is `pull_request`.
+
+**COMMENT_BODY** is the body text of an issue comment. This is only required when CodeGuard is triggered by a comment containing `/onboard`, which initiates a manual onboarding run.
 
 ## Running the Project Locally
 
-With the virtual environment active and the `.env` file populated, run the entry point:
+With the virtual environment active and the `.env` file populated, start CodeGuard by running the entry point directly:
 
-    python src/main.py
+```
+python src/main.py
+```
 
-The application reads `EVENT_NAME` and dispatches to the appropriate pipeline. For `pull_request`, it fetches the diff, runs three AI review agents in sequence, and posts a structured comment on the specified pull request. For `push`, it checks whether `CONTRIBUTING.md` already exists in the repository and, if not, explores the codebase and commits `CONTRIBUTING.md`, `ARCHITECTURE.md`, and `SETUP.md` to the repository root.
+CodeGuard will read `EVENT_NAME` from the environment, load configuration from `.codeguard.yml` if it exists in the working directory, and execute the appropriate pipeline. Runtime artifacts written during the session include `codeguard_session.json` (a timestamped log of all agent invocations) and `.codeguard_cache.json` (a cache of the repository structure hash and codebase summary). Both files are excluded from version control.
+
+To customize which features run, edit `.codeguard.yml` in the repository root. The file controls whether the security scan, quality review, PR summary, and onboarding documentation features are enabled, and sets the minimum severity threshold for security findings:
+
+```
+security:
+  enabled: true
+  severity_threshold: medium
+quality:
+  enabled: true
+summary:
+  enabled: true
+onboarding:
+  enabled: true
+```
 
 ## Branch Naming Conventions
 
-Use the following prefixes to keep branch history readable.
+Use the following prefixes when naming branches:
 
-`feature/short-description` for new capabilities, for example `feature/add-license-scan`.
+- `feature/` for new functionality (example: `feature/add-severity-filter`)
+- `fix/` for bug fixes (example: `fix/retry-logic-on-comment-post`)
+- `docs/` for documentation changes (example: `docs/update-contributing`)
+- `refactor/` for internal changes that do not affect behavior
+- `chore/` for maintenance tasks such as dependency updates or CI changes
 
-`fix/short-description` for bug fixes, for example `fix/post-comment-encoding`.
-
-`docs/short-description` for documentation changes only, for example `docs/update-setup-guide`.
-
-`chore/short-description` for maintenance tasks that do not affect application behavior, for example `chore/update-dependencies`.
-
-Branch names should be lowercase with words separated by hyphens. Do not push directly to `main`.
+Branch names should be lowercase and use hyphens to separate words. Keep names concise and descriptive of the change being made.
 
 ## Opening a Pull Request
 
-1. Create a branch following the naming conventions above.
-2. Make your changes and commit them with a clear, imperative commit message.
-3. Push the branch to the remote repository.
-4. Open a pull request against `main` through the GitHub web interface or the GitHub CLI.
-5. Write a description that explains what the change does and why it is needed.
-6. CodeGuard will automatically run on the pull request once it is opened or updated. Wait for the CodeGuard review comment to appear before requesting a human reviewer.
+Before opening a pull request, ensure your branch is up to date with `main` and that your changes do not break the existing entry point behavior. Then push your branch and open a pull request against `main` on GitHub.
 
-Pull requests that introduce new agent modules should include the corresponding entry in `src/main.py` so the routing layer can reach them. Pull requests that change environment variable requirements should update the `.env` documentation in this file.
+Your pull request description should include the following:
+
+- A plain English summary of what changed and why
+- Any environment variable additions or changes required
+- Notes on manual testing steps performed
+
+Assign at least one reviewer before marking the pull request ready for review. Draft pull requests are acceptable for early feedback but should be converted to ready before final review.
 
 ## What CodeGuard Checks on Every Pull Request
 
-When a pull request is opened, synchronized, or reopened, the GitHub Actions workflow triggers `src/main.py` with `EVENT_NAME` set to `pull_request`. CodeGuard performs three automated checks and posts the results as a single structured comment on the pull request.
+When a pull request is opened or updated against a CodeGuard enabled repository, the agent automatically performs the following checks and posts a single structured comment to the pull request:
 
-**Security scan**
-The security agent reviews the pull request diff for hardcoded secrets and credentials, injection vulnerabilities, unsafe use of `eval` or `exec`, missing input validation, insecure or unpinned dependencies, and unintended exposure of sensitive data. Results appear under the FINDINGS section of the review comment.
+**Security scan** analyzes the diff for vulnerabilities such as hardcoded secrets, unsafe deserialization, injection risks, and insecure dependencies. Findings are filtered by the configured severity threshold and reported in a structured FINDINGS block.
 
-**Quality review**
-The quality agent reviews the diff for overly complex or deeply nested functions, inconsistent naming conventions, weak or missing error handling, duplicated logic, absent test coverage, and hardcoded values that should be configuration. Results appear under the QUALITY NOTES section of the review comment.
+**Quality review** evaluates the changed code for issues including excessive complexity, missing error handling, unclear naming, and violations of established patterns in the codebase. Results are reported in a structured QUALITY NOTES block.
 
-**Plain-English summary**
-The summarization agent produces a concise description of what the pull request does, which parts of the codebase it affects, and any notable risks or trade-offs introduced by the change. This appears at the top of the review comment under the SUMMARY section.
+**Pull request summary** produces a concise plain English description of the intent of the changes, the files and areas affected, and any notable trade-offs observed in the diff.
 
-All three outputs are assembled by `src/post_results.py` and posted as a single comment attributed to CodeGuard. The comment is updated on each new push to the branch.
+All three outputs are composed into a single comment posted to the pull request by CodeGuard. No separate status checks or annotations are created. The full session log for each run is written to `codeguard_session.json` in the repository root of the runner environment.
