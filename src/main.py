@@ -26,7 +26,7 @@ async def run_onboarding(config, logger):
     codebase_summary = await explore_codebase()
     logger.log("explore_codebase", "explore", codebase_summary)
 
-    print("Generating docs in parllel")
+    print("Generating docs in parallel")
     contributing, architecture, setup = await asyncio.gather(
         gen_contributing(codebase_summary),
         gen_architecture(codebase_summary),
