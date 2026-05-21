@@ -1,3 +1,5 @@
 claude-agent-sdk
 pygithub
 python-dotenv
+pyyaml
+tzdata

@@ -1,5 +1,6 @@
 from claude_agent_sdk import query, ClaudeAgentOptions
 
+# Runs a Claude agent to generate a complete SETUP.md with step-by-step local setup instructions.
 async def gen_setup_guide(codebase_summary):
     print("Generating SETUP.md")
     prompt = f"""

@@ -1,11 +1,12 @@
 import asyncio
 from claude_agent_sdk import query, ClaudeAgentOptions
 
+# Runs a Claude agent to generate a complete CONTRIBUTING.md from the codebase summary.
 async def gen_contributing(codebase_summary):
     print("Generating CONTRIBUTING.md")
 
     prompt = f"""
-You are a senior software engineer writing onboarding documentation for a new contributor.PermissionError
+You are a senior software engineer writing onboarding documentation for a new contributor.
 Using the codebase summary below, write a complete CONTRIBUTING.md file
 
 INSTRUCTIONS:
