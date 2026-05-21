@@ -19,4 +19,4 @@ def post_review(pr_number, summary, security, quality):
     print("Posting review to GitHub...")
     comment = build_comment(summary, security, quality)
     post_pr_comment(pr_number, comment)
-    print("Review posted successfully.")
+    print("Review posted successfully.") 
