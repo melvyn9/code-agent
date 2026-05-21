@@ -41,7 +41,7 @@ async def run_onboarding(config, logger):
 
     commit_file("CONTRIBUTING.md", contributing, "docs: add CONTRIBUTING.md using CodeGuard onboarding")
     commit_file("ARCHITECTURE.md", architecture, "docs: add ARCHITECTURE.md using CodeGuard onboarding")
-    commit_file("SETUP.md", architecture, "docs: add SETUP.md using CodeGuard onboarding")
+    commit_file("SETUP.md", setup, "docs: add SETUP.md using CodeGuard onboarding")
     print("Onboarding pipeline complete.")
 
 # Entry point: reads the GitHub event type and routes to the onboarding pipeline (push/issue_comment) or the PR review pipeline.
@@ -80,7 +80,7 @@ async def main():
                 )
             logger.log("security_scan", context, security_results)
         else:
-            security_results = "FINDINGS:]"
+            security_results = "FINDINGS:\n- Security scan disabled in config"
         if config["quality"]["enabled"]:
             quality_results = await run_quality_review(context)
             logger.log("quality_review", context, quality_results)
