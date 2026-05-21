@@ -1,15 +1,15 @@
 # Contributing to CodeGuard
 
-CodeGuard is a GitHub integrated AI agent that automatically reviews pull requests for security vulnerabilities and code quality issues, and generates onboarding documentation for new repositories upon their first push.
+CodeGuard is a GitHub-integrated AI agent built on the Claude Agent SDK that automatically reviews pull requests for security vulnerabilities and code quality issues, and generates onboarding documentation for new repositories upon their first push.
 
 ## Prerequisites
 
-Before setting up the project locally, ensure you have the following installed:
+Before setting up the project, ensure you have the following installed:
 
 - Python 3.11
 - Git
-- A text editor or IDE of your choice
-- A GitHub account with access to the repository
+- A terminal with access to `python3` and `pip`
+- A GitHub account with access to the target repository
 - An Anthropic API key with access to Claude models
 
 ## Cloning and Setting Up the Project
@@ -21,7 +21,7 @@ git clone https://github.com/<your-org>/codeguard.git
 cd codeguard
 ```
 
-Once inside the project directory, create a virtual environment using the Python 3.11 interpreter:
+Create a virtual environment inside the project directory:
 
 ```
 python3.11 -m venv venv
@@ -41,105 +41,117 @@ On Windows:
 venv\Scripts\activate
 ```
 
-Your terminal prompt should now reflect the active environment. All subsequent commands assume the virtual environment is active.
+You should see `(venv)` appear at the beginning of your shell prompt, confirming the environment is active.
 
 ## Installing Dependencies
 
-With the virtual environment active, install all required dependencies from the requirements file:
+With the virtual environment active, install all required packages:
 
 ```
 pip install -r requirements.txt
 ```
 
-This installs the following direct dependencies:
-
-- `claude-agent-sdk` for AI agent orchestration and async streaming calls to Anthropic models
-- `pygithub` for interacting with the GitHub REST API
-- `python-dotenv` for loading environment variables from a `.env` file
-- `pyyaml` for parsing the `.codeguard.yml` configuration file
-- `tzdata` for IANA timezone support on Windows
+This installs the five direct dependencies: `claude-agent-sdk`, `pygithub`, `python-dotenv`, `pyyaml`, and `tzdata`.
 
 ## Environment Variables
 
-Create a `.env` file in the repository root. This file is excluded from version control and must never be committed. Populate it with the following variables:
+Create a `.env` file in the repository root. This file is excluded from version control and must never be committed. The following variables are required:
+
+**ANTHROPIC_API_KEY**
+Your Anthropic API key. CodeGuard uses this to authenticate all calls to Anthropic models, including `claude-sonnet-4-6` for deep analysis and `claude-haiku-4-5` for summarization.
+
+**GITHUB_TOKEN**
+A GitHub personal access token or Actions token with permissions to read pull request diffs, post comments, and commit files to the target repository.
+
+**REPO_NAME**
+The full name of the target repository in the format `owner/repository`. CodeGuard uses this to identify which repository to read from and write to via the GitHub API.
+
+**EVENT_NAME**
+The GitHub Actions event that triggered the run. Accepted values are `pull_request`, `push`, and `issue_comment`. CodeGuard uses this variable to determine which pipeline to execute at startup.
+
+**PR_NUMBER**
+The pull request number to review. This is required when `EVENT_NAME` is `pull_request`.
+
+**COMMENT_BODY**
+The full text of the issue comment that triggered the run. This is required when `EVENT_NAME` is `issue_comment` and CodeGuard needs to detect the `/onboard` command.
+
+A minimal `.env` file for local pull request review testing looks like this:
 
 ```
-ANTHROPIC_API_KEY=
-GITHUB_TOKEN=
-REPO_NAME=
-EVENT_NAME=
-PR_NUMBER=
-COMMENT_BODY=
+ANTHROPIC_API_KEY=sk-ant-...
+GITHUB_TOKEN=ghp_...
+REPO_NAME=your-org/your-repo
+EVENT_NAME=pull_request
+PR_NUMBER=42
 ```
 
-**ANTHROPIC_API_KEY** is your Anthropic API key. It authenticates all calls to Claude models, including `claude-sonnet-4-6` for deep analysis and `claude-haiku-4-5` for summarization.
+## Configuration
 
-**GITHUB_TOKEN** is a GitHub personal access token or Actions token. It authorizes CodeGuard to read pull request diffs, list changed files, post review comments, and commit generated documentation files to the target repository.
+CodeGuard reads an optional `.codeguard.yml` file from the repository root to control which feature modules are enabled and what security severity threshold to apply. If this file is absent, all modules default to enabled and the severity threshold defaults to `low`. The available keys are:
 
-**REPO_NAME** is the full name of the target GitHub repository in `owner/repo` format. CodeGuard uses this to locate the correct repository when making GitHub API calls.
+```yaml
+security:
+  enabled: true
+  severity_threshold: medium
 
-**EVENT_NAME** controls which pipeline CodeGuard executes on startup. Set it to `pull_request` to trigger the PR review pipeline, `push` to trigger the onboarding pipeline, or leave it as the raw value passed by the GitHub Actions runner.
+quality:
+  enabled: true
 
-**PR_NUMBER** is the number of the pull request to review. This is only required when `EVENT_NAME` is `pull_request`.
+summary:
+  enabled: true
 
-**COMMENT_BODY** is the body text of an issue comment. This is only required when CodeGuard is triggered by a comment containing `/onboard`, which initiates a manual onboarding run.
+onboarding:
+  enabled: true
+```
+
+Valid values for `severity_threshold` are `low`, `medium`, and `high`.
 
 ## Running the Project Locally
 
-With the virtual environment active and the `.env` file populated, start CodeGuard by running the entry point directly:
+With the virtual environment active and the `.env` file populated, run the entry point directly:
 
 ```
 python src/main.py
 ```
 
-CodeGuard will read `EVENT_NAME` from the environment, load configuration from `.codeguard.yml` if it exists in the working directory, and execute the appropriate pipeline. Runtime artifacts written during the session include `codeguard_session.json` (a timestamped log of all agent invocations) and `.codeguard_cache.json` (a cache of the repository structure hash and codebase summary). Both files are excluded from version control.
+CodeGuard reads `EVENT_NAME` from the environment on startup and routes execution to the appropriate pipeline. For a pull request review, it will fetch the diff for `PR_NUMBER` in `REPO_NAME`, invoke the security, quality, and summary agents, compose the results into a structured comment, and post it to the pull request. For a push event with no existing `CONTRIBUTING.md`, it will explore the codebase and generate onboarding documentation.
 
-To customize which features run, edit `.codeguard.yml` in the repository root. The file controls whether the security scan, quality review, PR summary, and onboarding documentation features are enabled, and sets the minimum severity threshold for security findings:
-
-```
-security:
-  enabled: true
-  severity_threshold: medium
-quality:
-  enabled: true
-summary:
-  enabled: true
-onboarding:
-  enabled: true
-```
+Generated runtime files (`codeguard_session.json` and `.codeguard_cache.json`) are written to the repository root after each run. Both files are excluded from version control.
 
 ## Branch Naming Conventions
 
-Use the following prefixes when naming branches:
+All work should happen on a dedicated branch. Use the following naming patterns:
 
-- `feature/` for new functionality (example: `feature/add-severity-filter`)
-- `fix/` for bug fixes (example: `fix/retry-logic-on-comment-post`)
-- `docs/` for documentation changes (example: `docs/update-contributing`)
-- `refactor/` for internal changes that do not affect behavior
-- `chore/` for maintenance tasks such as dependency updates or CI changes
+- `feature/<short-description>` for new functionality
+- `fix/<short-description>` for bug fixes
+- `docs/<short-description>` for documentation changes
+- `refactor/<short-description>` for internal restructuring that does not change behavior
+- `chore/<short-description>` for dependency updates, configuration changes, and other maintenance tasks
 
-Branch names should be lowercase and use hyphens to separate words. Keep names concise and descriptive of the change being made.
+Branch names should use lowercase letters and hyphens only. Keep them concise and descriptive, for example `feature/cache-invalidation` or `fix/retry-on-rate-limit`.
 
 ## Opening a Pull Request
 
-Before opening a pull request, ensure your branch is up to date with `main` and that your changes do not break the existing entry point behavior. Then push your branch and open a pull request against `main` on GitHub.
+Before opening a pull request:
 
-Your pull request description should include the following:
+1. Confirm all changed modules are covered by a manual test or a documented rationale if automated testing is not yet in scope for that module.
+2. Ensure your `.env` file is not staged or committed.
+3. Run the project locally against a test repository to verify the pipeline completes without errors.
+4. Write a clear pull request description that explains what changed, why it changed, and any trade-offs or risks you are aware of.
 
-- A plain English summary of what changed and why
-- Any environment variable additions or changes required
-- Notes on manual testing steps performed
-
-Assign at least one reviewer before marking the pull request ready for review. Draft pull requests are acceptable for early feedback but should be converted to ready before final review.
+Open the pull request against the `main` branch. Mark it as a draft if it is not yet ready for review. Assign at least one reviewer before marking it ready.
 
 ## What CodeGuard Checks on Every Pull Request
 
-When a pull request is opened or updated against a CodeGuard enabled repository, the agent automatically performs the following checks and posts a single structured comment to the pull request:
+When a pull request is opened or updated in any repository where CodeGuard is installed, the following checks run automatically:
 
-**Security scan** analyzes the diff for vulnerabilities such as hardcoded secrets, unsafe deserialization, injection risks, and insecure dependencies. Findings are filtered by the configured severity threshold and reported in a structured FINDINGS block.
+**Security scan**
+CodeGuard invokes a Claude agent with a focused security analysis prompt to identify vulnerabilities in the changed code. Findings are filtered by the configured severity threshold and reported as a structured FINDINGS block in the review comment.
 
-**Quality review** evaluates the changed code for issues including excessive complexity, missing error handling, unclear naming, and violations of established patterns in the codebase. Results are reported in a structured QUALITY NOTES block.
+**Code quality review**
+A separate Claude agent reviews the diff for code quality issues including clarity, maintainability, error handling, and adherence to idiomatic patterns. Results are reported as a QUALITY NOTES block.
 
-**Pull request summary** produces a concise plain English description of the intent of the changes, the files and areas affected, and any notable trade-offs observed in the diff.
+**Pull request summary**
+A lighter Claude model produces a concise plain-English summary of the pull request's intent, affected areas, and any notable trade-offs. This appears at the top of the review comment to give reviewers immediate context.
 
-All three outputs are composed into a single comment posted to the pull request by CodeGuard. No separate status checks or annotations are created. The full session log for each run is written to `codeguard_session.json` in the repository root of the runner environment.
+All three outputs are composed into a single structured markdown comment posted directly to the pull request by the `post_results` module. The full agent session log, including prompt lengths, result lengths, and timestamps, is saved to `codeguard_session.json` for debugging and auditing purposes.
